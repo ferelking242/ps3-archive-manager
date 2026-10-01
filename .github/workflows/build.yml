@@ -29,8 +29,8 @@ jobs:
         run: make -C ps3 clean all
       - name: Verify outputs
         run: |
-          test -s ps3/build/PS3ArchiveManager.self
-          test -s ps3/build/PS3ArchiveManager.pkg
+          test -s ps3/PS3ArchiveManager.self
+          test -s ps3/PS3ArchiveManager.pkg
           test -s ps3/pkgfiles/ICON0.PNG
           ls -l ps3/PS3ArchiveManager.self ps3/PS3ArchiveManager.pkg
       - name: Collect artifacts
