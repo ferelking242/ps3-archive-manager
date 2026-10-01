@@ -18,7 +18,6 @@
 #include <string.h>
 #include <malloc.h>
 #include <unistd.h>
-#include <time.h>
 #include <sys/file.h>
 #include <sysutil/video.h>
 #include <rsx/gcm_sys.h>
@@ -45,6 +44,7 @@
 #define COL_TEXT      0x00eef4ff
 #define COL_DIM       0x008fa2c0
 #define COL_ERR       0x00ff5f6a
+#define COL_OK        0x0056d68a
 #define COL_DIR       0x0066b8ff
 #define COL_ARCHIVE   0x00ffb94f
 #define COL_ISO       0x00c792ea
@@ -327,10 +327,12 @@ static int part_exists_cb(const char *root, const char *name,
 
 static unsigned long long now_us(void)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (unsigned long long)ts.tv_sec * 1000000ull +
-           (unsigned long long)ts.tv_nsec / 1000ull;
+    /* PSL1GHT has no clock_gettime in the sysapp context: wall-time via
+     * systick would need lv2 calls, so use usleep-quantized frames. The
+     * UI loop repaints every ~40 ms; speed/ETA only need rough timing. */
+    static unsigned long long synthetic_us;
+    synthetic_us += 40 * 1000ull;
+    return synthetic_us;
 }
 
 static unsigned long long op_t0_us;
