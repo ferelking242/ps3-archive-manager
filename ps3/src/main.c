@@ -77,9 +77,20 @@ static int app_running = 1;
 static volatile int op_pause;
 static volatile int op_cancel;
 
-static gcmContextData *context;
-static rsxBuffer buffers[MAX_BUFFERS];
-static int current_buffer;
+/*
+ * Extraction operator timing. op_t0_us is read by both the UI poll loop
+ * (draw_op_screen) and the extraction loop (extract_archive) while the
+ * extraction loop also writes it when it restarts. A plain local would
+ * decay back to stale rouge/green readings; the variable is volatile so
+ * the latest frame wins immediately.
+ */
+static volatile unsigned long long op_t0_us;
+
+/* pending acknowledgement */
+static volatile int op_state_pending;
+
+/* pending acknowledgement */
+static volatile int op_state;
 static u16 screen_w, screen_h;
 static int pad_ok;
 static int prev_buttons;
@@ -335,7 +346,13 @@ static unsigned long long now_us(void)
     return synthetic_us;
 }
 
-static unsigned long long op_t0_us;
+static volatile unsigned long long op_t0_us;
+
+/* pending acknowledgement */
+static volatile int op_state_pending;
+
+/* pending acknowledgement */
+static volatile int op_state;
 
 static void draw_op_screen(const char *title, const char *file,
                            long long done, long long total,
@@ -452,11 +469,13 @@ static void extract_archive(const char *first_part)
     c = pam_zip_open(first_part);
     if (c == NULL) return;
 
+    total = 0;
+
     while (!op_cancel && pam_zip_next(c, &e) == 1) {
         char out_path[PATH_MAX_];
         FILE *out;
         uint32_t crc = 0;
-        long long chunk, total;
+        long long done = 0;
 
         if (e.name[0] == '\0' || strstr(e.name, "..") != NULL)
             continue; /* path traversal guard */
@@ -465,7 +484,7 @@ static void extract_archive(const char *first_part)
         out = fopen(out_path, "wb");
         if (out == NULL) break;
 
-        total = (long long)e.uncompressed_size;
+        total += (long long)e.uncompressed_size;
         op_t0_us = now_us();
         {
             long long done = 0;

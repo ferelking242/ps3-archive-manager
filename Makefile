@@ -16,7 +16,7 @@ CORE_TEST := build/test-core
 APPID := PS3ARCHMGR
 TITLE := PS3 Archive Manager
 
-.PHONY: all clean test ps3
+.PHONY: all clean test ps3 host-smoke
 
 all: $(CORE_TEST)
 
@@ -27,6 +27,12 @@ $(CORE_TEST): tests/test_core.c $(CORE_SOURCES) src/core/archive.h \
 
 test: $(CORE_TEST)
 	./$(CORE_TEST)
+
+host-smoke: tests/test_uistate.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -o $@ tests/test_uistate.c
+	./$@
+
+clean:
 
 ps3:
 	$(MAKE) -C ps3 all
