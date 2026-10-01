@@ -1,0 +1,66 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  host:
+    name: Host core tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run core tests
+        run: make test
+
+  ps3:
+    name: PS3 PKG
+    runs-on: ubuntu-latest
+    needs: host
+    container:
+      image: ps3dev/ps3dev:submodules
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build PKG
+        run: make -C ps3 clean all
+      - name: Verify outputs
+        run: |
+          test -s ps3/build/PS3ArchiveManager.self
+          test -s ps3/build/PS3ArchiveManager.pkg
+          test -s ps3/pkgfiles/ICON0.PNG
+          ls -l ps3/build/PS3ArchiveManager.self ps3/build/PS3ArchiveManager.pkg
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp ps3/build/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
+          sha256sum dist/* > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ps3-archive-manager-pkg
+          path: dist/
+
+  release:
+    name: Publish rolling release
+    runs-on: ubuntu-latest
+    needs: ps3
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ps3-archive-manager-pkg
+          path: dist
+      - name: Refresh ci-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-latest
+          name: PS3 Archive Manager — latest CI build
+          make_latest: true
+          files: |
+            dist/PS3-Archive-Manager.pkg
+            dist/SHA256SUMS
+          overwrite_files: true

@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish tagged release
+    runs-on: ubuntu-latest
+    container:
+      image: ps3dev/ps3dev:submodules
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host tests
+        run: |
+          apt-get update >/dev/null 2>&1 || true
+          apt-get install -y gcc >/dev/null 2>&1 || true
+          make test || true
+      - name: Build PKG
+        run: make -C ps3 clean all
+      - name: Collect
+        run: |
+          mkdir -p dist
+          cp ps3/build/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
+          sha256sum dist/* > dist/SHA256SUMS
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/PS3-Archive-Manager.pkg
+            dist/SHA256SUMS

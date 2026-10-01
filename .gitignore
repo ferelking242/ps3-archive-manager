@@ -1,0 +1,8 @@
+build/
+dist/
+*.o
+*.elf
+*.self
+*.pkg
+*.map
+ps3/pkgfiles/USRDIR/EBOOT.BIN
