@@ -77,6 +77,10 @@ static int app_running = 1;
 static volatile int op_pause;
 static volatile int op_cancel;
 
+static gcmContextData *context;
+static rsxBuffer buffers[MAX_BUFFERS];
+static int current_buffer;
+
 /*
  * Extraction operator timing. op_t0_us is read by both the UI poll loop
  * (draw_op_screen) and the extraction loop (extract_archive) while the
@@ -346,14 +350,6 @@ static unsigned long long now_us(void)
     return synthetic_us;
 }
 
-static volatile unsigned long long op_t0_us;
-
-/* pending acknowledgement */
-static volatile int op_state_pending;
-
-/* pending acknowledgement */
-static volatile int op_state;
-
 static void draw_op_screen(const char *title, const char *file,
                            long long done, long long total,
                            const char *hint)
@@ -469,13 +465,11 @@ static void extract_archive(const char *first_part)
     c = pam_zip_open(first_part);
     if (c == NULL) return;
 
-    total = 0;
-
     while (!op_cancel && pam_zip_next(c, &e) == 1) {
         char out_path[PATH_MAX_];
         FILE *out;
         uint32_t crc = 0;
-        long long done = 0;
+        long long chunk, total;
 
         if (e.name[0] == '\0' || strstr(e.name, "..") != NULL)
             continue; /* path traversal guard */
@@ -484,7 +478,7 @@ static void extract_archive(const char *first_part)
         out = fopen(out_path, "wb");
         if (out == NULL) break;
 
-        total += (long long)e.uncompressed_size;
+        total = (long long)e.uncompressed_size;
         op_t0_us = now_us();
         {
             long long done = 0;

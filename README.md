@@ -89,7 +89,7 @@ docker run --rm -v "$PWD":/src -w /src ps3dev/ps3dev:submodules \
     make -C ps3 clean all
 ```
 
-Output: `ps3/build/PS3ArchiveManager.pkg`.
+Output: `ps3/PS3ArchiveManager.pkg` (PPU objects land in `ps3/build/`).
 
 Local toolchain users: set `PS3DEV=/usr/local/ps3dev` (default) and run
 `make -C ps3 clean all`.
