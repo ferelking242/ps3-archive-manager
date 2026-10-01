@@ -26,7 +26,7 @@ jobs:
       - name: Collect
         run: |
           mkdir -p dist
-          cp ps3/build/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
+          cp ps3/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
           sha256sum dist/* > dist/SHA256SUMS
       - name: Publish
         uses: softprops/action-gh-release@v2

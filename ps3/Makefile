@@ -19,7 +19,6 @@ CONTENTID := UP0001-$(APPID)_00-0000000000000000
 
 INSTALLER_DIR := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
 PKGFILES := $(INSTALLER_DIR)/pkgfiles
-ICON0_SRC := $(INSTALLER_DIR)/pkgfiles/ICON0.PNG
 ICON0_OUT := $(PKGFILES)/ICON0.PNG
 
 #-------------------------------------------------------------------------------
@@ -66,9 +65,8 @@ $(LIBPSL1GHT_LIB)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 #-------------------------------------------------------------------------------
-$(ICON0_OUT): $(ICON0_SRC)
-	@mkdir -p $(dir $@)
-	@cp $< $@
+$(ICON0_OUT):
+	@test -s $@ || (echo "ICON0.PNG missing from pkgfiles" && exit 1)
 #-------------------------------------------------------------------------------
 all: $(ICON0_OUT)
 	@[ -d $(BUILD) ] || mkdir -p $(BUILD)

@@ -32,11 +32,11 @@ jobs:
           test -s ps3/build/PS3ArchiveManager.self
           test -s ps3/build/PS3ArchiveManager.pkg
           test -s ps3/pkgfiles/ICON0.PNG
-          ls -l ps3/build/PS3ArchiveManager.self ps3/build/PS3ArchiveManager.pkg
+          ls -l ps3/PS3ArchiveManager.self ps3/PS3ArchiveManager.pkg
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp ps3/build/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
+          cp ps3/PS3ArchiveManager.pkg dist/PS3-Archive-Manager.pkg
           sha256sum dist/* > dist/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
