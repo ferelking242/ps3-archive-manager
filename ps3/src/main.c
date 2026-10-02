@@ -29,6 +29,7 @@
 #include "../../src/core/archive.h"
 #include "../../src/core/split.h"
 #include "../../src/core/zip_reader.h"
+#include "../../src/core/extract.h"
 
 #define MAX_BUFFERS 2
 #define LIST_VISIBLE 14
@@ -446,12 +447,130 @@ static void iso_prompt(const char *out_path, const char *name)
     prev_buttons = read_buttons();
 }
 
+/* ---- unified extraction pipeline (extract.h) ---------------------------- */
+
+static int mkdir_cb(const char *path, void *user)
+{
+    sysFSStat st;
+    (void)user;
+    if (sysLv2FsStat(path, &st) == 0)
+        return 0;
+    return sysLv2FsMkdir(path, 0777) == 0 ? 0 : -1;
+}
+
+/*
+ * Called before each chunk: this is where the pad is polled, so pause
+ * (X) and cancel (O) stay responsive for the whole extraction, ZIP and
+ * 7z alike. Blocking here is allowed by the extract.h contract.
+ */
+static int progress_cb(const char *name, long long done, long long total,
+                       void *user)
+{
+    (void)user;
+    if (done == 0)
+        op_t0_us = now_us(); /* per-entry speed / ETA */
+    for (;;) {
+        int buttons = read_buttons();
+        if (pressed(buttons, PAD_CROSS))
+            op_pause = !op_pause;
+        if (pressed(buttons, PAD_CIRCLE))
+            op_cancel = 1;
+        prev_buttons = buttons;
+        if (op_cancel)
+            return -1;
+        if (!op_pause)
+            break;
+        draw_op_screen("PAUSED", name, done, total, "");
+        usleep(60 * 1000);
+    }
+    draw_op_screen("EXTRACTING", name, done, total, "");
+    return 0;
+}
+
+static void after_entry_cb(const char *name, const char *dest_path, int ok,
+                           void *user)
+{
+    const char *base;
+    (void)ok;
+    (void)user;
+    if (!ends_with_ci(name, ".iso"))
+        return;
+    base = strrchr(name, '/');
+    {
+        const char *bs = strrchr(name, '\\');
+        if (bs != NULL && (base == NULL || bs > base))
+            base = bs;
+    }
+    iso_prompt(dest_path, base != NULL ? base + 1 : name);
+}
+
+static void result_screen(const pam_extract_result *res)
+{
+    rsxBuffer *b;
+    char line[192];
+    const char *title;
+    u32 color;
+
+    switch (res->status) {
+    case PAM_EXTRACT_OK:
+        title = res->failed > 0 ? "EXTRACTION: ERREURS" : "EXTRACTION OK";
+        color = res->failed > 0 ? COL_ERR : COL_OK;
+        break;
+    case PAM_EXTRACT_CANCELLED:
+        title = "EXTRACTION ANNULEE";
+        color = COL_DIM;
+        break;
+    case PAM_EXTRACT_ENCRYPTED:
+        title = "ARCHIVE CHIFFREE";
+        color = COL_ERR;
+        break;
+    case PAM_EXTRACT_UNSUPPORTED:
+        title = "FORMAT NON SUPPORTE";
+        color = COL_ERR;
+        break;
+    default:
+        title = "EXTRACTION ECHOUEE";
+        color = COL_ERR;
+        break;
+    }
+
+    frame_begin(COL_BG);
+    draw_header("PS3 ARCHIVE MANAGER", cwd);
+    b = &buffers[current_buffer];
+    put_text2(b->ptr, b->width, b->height, 84, 130, title, color);
+    snprintf(line, sizeof(line), "%d fichier(s)  %d dossier(s)  %d en echec",
+             res->files, res->dirs, res->failed);
+    put_text(b->ptr, b->width, b->height, 84, 176, line, COL_TEXT);
+    snprintf(line, sizeof(line), "%lld octets verifies", res->bytes);
+    put_text(b->ptr, b->width, b->height, 84, 200, line, COL_TEXT);
+    if (res->crc_errors > 0) {
+        snprintf(line, sizeof(line), "%d erreur(s) CRC", res->crc_errors);
+        put_text(b->ptr, b->width, b->height, 84, 224, line, COL_ERR);
+    }
+    if (res->unsafe_skips > 0) {
+        snprintf(line, sizeof(line), "%d chemin(s) non sur ignores",
+                 res->unsafe_skips);
+        put_text(b->ptr, b->width, b->height, 84, 248, line, COL_DIM);
+    }
+    if (res->message[0] != '\0')
+        put_text(b->ptr, b->width, b->height, 84, 288, res->message, COL_TEXT);
+    if (res->entry[0] != '\0') {
+        snprintf(line, sizeof(line), "%.120s", res->entry);
+        put_text(b->ptr, b->width, b->height, 84, 312, line, COL_DIM);
+    }
+    put_text(b->ptr, b->width, b->height, 84, 380, "[X] OK", COL_DIM);
+    frame_end();
+
+    wait_release(PAD_CROSS);
+    while (!((read_buttons()) & PAD_CROSS)) usleep(50 * 1000);
+    prev_buttons = read_buttons();
+}
+
 static void extract_archive(const char *first_part)
 {
     pam_split_set set;
-    pam_zip_cursor *c;
-    pam_zip_entry e;
-    int buttons;
+    pam_extract_ops ops;
+    pam_extract_result res;
 
     op_pause = op_cancel = 0;
     op_t0_us = now_us();
@@ -462,50 +581,12 @@ static void extract_archive(const char *first_part)
         return;
     }
 
-    c = pam_zip_open(first_part);
-    if (c == NULL) return;
-
-    while (!op_cancel && pam_zip_next(c, &e) == 1) {
-        char out_path[PATH_MAX_];
-        FILE *out;
-        uint32_t crc = 0;
-        long long chunk, total;
-
-        if (e.name[0] == '\0' || strstr(e.name, "..") != NULL)
-            continue; /* path traversal guard */
-
-        snprintf(out_path, sizeof(out_path), "%s/%s", cwd, e.name);
-        out = fopen(out_path, "wb");
-        if (out == NULL) break;
-
-        total = (long long)e.uncompressed_size;
-        op_t0_us = now_us();
-        {
-            long long done = 0;
-            while (!op_cancel && done < total) {
-                while (op_pause && !op_cancel) {
-                    draw_op_screen("PAUSED", e.name, done, total, "");
-                    usleep(60 * 1000);
-                }
-                chunk = pam_zip_extract_current(
-                    c, out, (unsigned long long)(total - done), &crc);
-                if (chunk < 0) { op_cancel = 1; break; }
-                done += chunk;
-                draw_op_screen("EXTRACTING", e.name, done, total, "");
-            }
-        }
-        fclose(out);
-        if (op_cancel) break;
-
-        if (crc != e.crc32) {
-            draw_op_screen("CRC MISMATCH", e.name, total, total,
-                           "Data corrupted");
-            usleep(2 * 1000 * 1000);
-        }
-        if (ends_with_ci(e.name, ".iso"))
-            iso_prompt(out_path, e.name);
-    }
-    pam_zip_close(c);
+    memset(&ops, 0, sizeof(ops));
+    ops.mkdir = mkdir_cb;
+    ops.progress = progress_cb;
+    ops.after_entry = after_entry_cb;
+    pam_extract_to_dir(first_part, cwd, &ops, &res);
+    result_screen(&res);
 }
 
 /* ---------------- browser ---------------- */

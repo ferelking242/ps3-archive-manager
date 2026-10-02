@@ -38,7 +38,8 @@ export DEPSDIR := $(CURDIR)/$(BUILD)
 export BUILDDIR := $(CURDIR)/$(BUILD)
 #-------------------------------------------------------------------------------
 CFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))) \
-	archive.c split.c zip_reader.c
+	archive.c split.c zip_reader.c crc32.c stream.c inflate.c lzma.c \
+	sevenzip.c extract.c
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 sFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 SFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))

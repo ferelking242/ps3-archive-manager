@@ -1,0 +1,23 @@
+# fixture	status	files	dirs	bytes (or FAIL detail)
+archive.7z.001	OK	12	7	158226
+copy.7z	OK	2	1	66
+crc_corrupted.7z	FAIL	CrcError: (3010113243, 3010113244, 'src/scripts/py7zr')
+data_corrupted.7z	FAIL	LZMAError: Corrupt input data
+deflate.7z	OK	2	1	66
+empty.7z	OK	0	0	0
+encrypted_1.7z	FAIL	PasswordRequired: ([{'method': b'\x06\xf1\x07\x01', 'numinstreams': 1, 'numoutstreams': 1, 'properties': b'S\x07|&\xae\x94do\x8a4'}, {'method': b'\x03\x01\x01', 'numinstreams': 1, 'numoutstreams': 1, 'properties': b']\x00\x00\x01\x00'}], 'Password is required for extracting given archive.')
+github_14_multi.7z	OK	2	0	56
+hidden_linux_folder.7z	OK	0	1	0
+longpath.7z	OK	2	13	664
+lzma2_1.7z	OK	3	1	728
+lzma2delta_1.7z	OK	1	1	11
+lzma_1.7z	OK	1	0	33
+lzma_bcj_x86.7z	OK	1	0	1052
+ppmd.7z	OK	2	1	66
+read_reset.7z	OK	2	0	10
+solid.7z	OK	2	1	66
+test_1.7z	OK	3	1	728
+test_2.7z	OK	1	1	4326
+test_folder.7z	OK	6	5	0
+umlaut-solid.7z	OK	1	0	51
+zerosize.7z	OK	2	1	2

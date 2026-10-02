@@ -24,7 +24,7 @@ directly from the XMB-era system with a gamepad-friendly interface:
 > This project is **experimental**. It compiles in CI but has not yet been
 > validated on real hardware. See [Limitations](#limitations).
 
-## Features (Phase 1–2)
+## Features (Phase 1–3)
 
 | Feature | Status |
 | --- | --- |
@@ -32,11 +32,11 @@ directly from the XMB-era system with a gamepad-friendly interface:
 | Archive signature detection (ZIP / 7z / TAR / GZ / BZ2 / XZ) | ✅ |
 | `.NNN` multi-volume detection & verification | ✅ |
 | Missing-part report before extraction | ✅ |
-| Streaming extraction (stored ZIP entries) | ✅ |
+| Streaming extraction (ZIP / 7z, solid + multi-volume) | ✅ |
 | CRC-32 verification per entry | ✅ |
 | Pause / resume / cancel | ✅ |
 | PS3 ISO move prompt | ✅ |
-| Deflate / 7z decode | 🔜 Phase 3 |
+| Deflate / 7z decode (LZMA, LZMA2, BCJ-x86, Delta) | ✅ |
 | Archive creation (ZIP / 7z) | 🔜 Phase 4–5 |
 | Copy / move / rename / delete | 🔜 Phase 6 |
 | Themes, settings, logs | 🔜 Phase 7 |
@@ -72,6 +72,18 @@ Detection is **signature-based**: the file type is read from the bytes
 (`PK\x03\x04`, `7z\xBC\xAF\x27\x1C`, `ustar`, …), never assumed from the
 extension alone. A `.001` file is not necessarily a ZIP.
 
+## Supported formats
+
+| Container | Decode |
+| --- | --- |
+| ZIP | stored + Deflate entries, CRC-32 verified |
+| 7z | Copy, LZMA, LZMA2, Deflate; x86 BCJ and Delta filter chains; solid folders, encoded headers, multi-volume `.7z.001` |
+| TAR / GZ / BZ2 / XZ | detected only (unpacking not implemented yet) |
+
+Unsupported 7z coders (PPMd, BZip2, other BCJ variants) and encrypted
+archives abort with an explicit status; every extracted file is verified
+against its stored CRC-32.
+
 ## Build
 
 ### Host tests (no toolchain)
@@ -100,22 +112,32 @@ Local toolchain users: set `PS3DEV=/usr/local/ps3dev` (default) and run
 src/core/          Portable C core (host-testable, no PS3 dependencies)
   archive.c        Signature sniffing + split-name parsing
   split.c          Multi-volume set scanning (gapless walk)
-  zip_reader.c     Streaming stored-entry ZIP reader with CRC-32
+  zip_reader.c     Streaming ZIP reader with CRC-32
+  inflate.c        Deflate decoder (raw ZIP / 7z streams)
+  lzma.c           Resumable LZMA / LZMA2 decoders (7z)
+  sevenzip.c       7z container reader + BCJ-x86 / Delta filters
+  extract.c        Unified extraction pipeline (ZIP + 7z)
+  stream.c         Multi-volume byte stream (".001" … ".NNN")
+  crc32.c          CRC-32 (IEEE) for entry verification
 ps3/               PSL1GHT application (RSX framebuffer UI + sysFS backend)
-tests/             Host test suite (fixtures built on the fly)
+tests/             Host test suite + committed fixture archives
 .github/workflows  CI: host tests, PKG build, rolling release
 ```
 
-The core is pure C11 with no allocations inside the streaming loops beyond
-fixed 256 KB buffers: designed for the PS3's tight memory budget and for
-multi-GB files.
+The core is pure C11: no third-party libraries, no allocations inside the
+streaming loops beyond fixed buffers (plus one bounded LZMA dictionary per
+open folder): designed for the PS3's tight memory budget and for multi-GB
+files.
 
 ## Limitations
 
 - **No hardware validation yet** — the SPRX/SELF builds and PKGs assemble in
   CI, but no real HEN console has confirmed loading, rendering or transfers.
-- Deflate-compressed ZIP entries and 7z archives require Phase 3 (planned:
-  linking a PowerPC build of zlib / lzma-sdk).
+- 7z coders outside the supported set (PPMd, BZip2, other BCJ variants)
+  and AES-encrypted archives are reported as unsupported/encrypted —
+  never silently skipped.
+- TAR / GZ / BZ2 / XZ are detected but their unpacking is not
+  implemented yet.
 - Archive creation is not implemented yet (Phases 4–5).
 - The UI is a framebuffer renderer (no RSX shaders): fast, but simple.
 
