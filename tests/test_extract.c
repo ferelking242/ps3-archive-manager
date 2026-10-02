@@ -74,7 +74,7 @@ static void cat3(char *dst, size_t cap, const char *a, const char *b,
 
 /* ---- directory tree walking ---------------------------------------------- */
 
-/* Entries are stored as "d path" or "F path" so one sort orders and tags. */
+/* Entries are stored as "F path" so one sort orders both trees alike. */
 typedef struct {
     char *paths; /* MAX_ENTRIES * PATH_CAP */
     int n;
@@ -138,13 +138,51 @@ static void walk(const char *root, const char *rel, plist *p)
         if (stat(child_full, &st) != 0)
             continue;
         if (S_ISDIR(st.st_mode)) {
-            plist_add(p, 'd', child_rel);
+            /* Files only: git cannot store empty directories, so a fresh
+             * checkout lacks them — the directory layout is implied by
+             * the file paths, and res.dirs is asserted against the
+             * manifest instead. */
             walk(root, child_rel, p);
         } else {
             plist_add(p, 'F', child_rel);
         }
     }
     closedir(d);
+}
+
+/* Count directories in an extracted tree (dest only: unlike the committed
+ * expected/ trees, a freshly extracted dest contains its empty dirs). */
+static int count_dirs(const char *root, const char *rel)
+{
+    char full[PATH_CAP * 2];
+    DIR *d;
+    struct dirent *de;
+    int n = 0;
+
+    if (rel[0] == '\0')
+        scopy(full, sizeof(full), root);
+    else
+        cat3(full, sizeof(full), root, "/", rel);
+    d = opendir(full);
+    if (d == NULL)
+        return 0;
+    while ((de = readdir(d)) != NULL) {
+        char child_rel[PATH_CAP], child_full[PATH_CAP * 2];
+        struct stat st;
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
+            continue;
+        if (rel[0] == '\0')
+            cat2(child_rel, sizeof(child_rel), "", de->d_name);
+        else
+            cat3(child_rel, sizeof(child_rel), rel, "/", de->d_name);
+        cat3(child_full, sizeof(child_full), root, "/", child_rel);
+        if (stat(child_full, &st) == 0 && S_ISDIR(st.st_mode)) {
+            n++;
+            n += count_dirs(root, child_rel);
+        }
+    }
+    closedir(d);
+    return n;
 }
 
 static int files_equal(const char *a, const char *b)
@@ -251,8 +289,8 @@ static int unsupported_coder_fixture(const char *name)
 }
 
 static void run_7z_fixture(const char *name, const char *status,
-                           const char *detail, long long files, long long bytes,
-                           int line)
+                           const char *detail, long long files,
+                           long long dirs, long long bytes, int line)
 {
     char dest[] = "/tmp/pamexXXXXXX";
     char data[PATH_CAP], expected[PATH_CAP];
@@ -327,6 +365,14 @@ static void run_7z_fixture(const char *name, const char *status,
         failures++;
     } else {
         CHECK(res.files == files);
+        /* Directory layout: the manifest counts py7zr's extracted tree;
+         * res.dirs only counts explicit metadata entries (longpath.7z
+         * creates all 13 dirs implicitly from file paths). */
+        if (count_dirs(dest, "") != dirs) {
+            fprintf(stderr, "FAIL line %d: %s tree dirs=%d want=%lld\n", line,
+                    name, count_dirs(dest, ""), dirs);
+            failures++;
+        }
         CHECK(res.bytes == bytes);
         compare_trees(expected, dest, line);
     }
@@ -357,6 +403,7 @@ static void test_manifest_fixtures(void)
             continue;
         run_7z_fixture(cols[0], cols[1], ncol > 2 ? cols[2] : "",
                        ncol > 4 ? atoll(cols[2]) : -1,
+                       ncol > 4 ? atoll(cols[3]) : -1,
                        ncol > 4 ? atoll(cols[4]) : -1, lineno);
     }
     fclose(mf);
